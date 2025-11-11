@@ -1,0 +1,71 @@
+%% MPC
+
+function [u_opt, feasible, cost] = MPC_controller(x_current, x_ref, Ad, Bd, Cd, N, Q, R, P, u_prev, u_max, du_max)
+    n = size(Ad, 1);  % number of states 
+    m = size(Bd, 2);  % number of inputs
+    
+    u = sdpvar(m, N, 'full');    % control sequence
+    x = sdpvar(n, N+1, 'full');  % state sequence
+    
+    constraints = [];
+    objective = 0;
+    
+    constraints = [constraints, x(:,1) == x_current];
+    
+    for k = 1:N
+        constraints = [constraints, x(:,k+1) == Ad*x(:,k) + Bd*u(:,k)];
+    end
+    
+    constraints = [constraints, -u_max <= u <= u_max];
+    
+    for k = 1:N
+        if k == 1
+            du = u(:,k) - u_prev;
+        else
+            du = u(:,k) - u(:,k-1);
+        end
+        constraints = [constraints, -du_max <= du <= du_max];
+    end
+    
+    % objective function 
+    for k = 1:N
+        % stage cost
+        objective = objective + (x(:,k) - x_ref)' * Q * (x(:,k) - x_ref);
+        objective = objective + u(:,k)' * R * u(:,k);
+    end
+    
+    % terminal cost
+    objective = objective + (x(:,N+1) - x_ref)' * P * (x(:,N+1) - x_ref);
+
+    options = sdpsettings('solver', 'quadprog', 'verbose', 0, 'warning', 0);
+    
+    diagnostics = optimize(constraints, objective, options);
+    
+    if diagnostics.problem == 0
+        u_opt = value(u(:,1));      
+        feasible = true;
+        cost = value(objective);
+    else
+        u_opt = 0;                  
+        feasible = false;
+        cost = inf;
+        warning('MPC infeasible at step');
+    end
+end
+
+
+N = 30;
+Q = ...;    
+R = ...;                       
+P = 10 * Q;                   
+
+u_max = 5;      
+du_max = 2;     
+
+u_prev = 0; 
+x_current = [0; 0.1; 0; 0];  
+x_ref = [0; 0; 0; 0];        
+[u_opt, feasible, cost] = MPC_controller(x_current, x_ref, Ad, Bd, Cd, N, Q, R, P, u_prev, u_max, du_max);
+disp(u_opt);
+disp(feasible);
+disp(cost);

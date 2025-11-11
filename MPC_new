@@ -1,0 +1,131 @@
+
+syms theta(t) alpha(t) u t 
+dt = diff(theta);
+d2t = diff(theta, 2);
+da = diff(alpha);
+d2a = diff(alpha,2);
+
+ts = 0.002;
+
+Rm = 7.5;
+kt = 0.042;
+km = 0.042;
+mr = 0.095;
+r = 0.085;
+Jr = (mr*r^2)/3;
+br = 1e-3;
+mp = 0.024;
+Lp = 0.129;
+I = Lp/2;
+Jp = (mp*Lp^2)/3;
+bp = 5e-5;
+g = 9.81;
+
+
+d = Jp*(Jr+mp*r^2)-(mp*I*r)^2;
+im = (u-km*dt)/Rm;
+
+% eq = (Jr+mp*r^2)*d2t - mp*I*r*d2a + br*dt == kt*im;
+% eq2 = mp*I*r*d2t -Jp*d2a + mp*g*I*alpha - bp*da == 0;
+% [SS,Sbs] = odeToVectorField(eq, eq2);
+% SS(4)
+
+
+A = zeros(4,4); B = zeros(4,1); C = [1, 0, 0, 0; 0, 1, 0, 0]; D = 0;
+A(1, 1) = 1;
+A(2, 2) = 1;
+
+A(3, 2) = (1/d)*((mp*I*r)*(mp*g*I));
+A(3, 3) = -(1/d)*(Jp*(br + kt*(km/Rm)));
+A(3, 4) = (1/d)*(mp*I*r*(-bp));
+
+A(4, 2) = (1/d)*(Jr+mp*r^2)*(mp*g*I);
+A(4, 3) = (1/d)*(mp*I*r*(-br-kt*(km/Rm)));
+A(4, 4) = (1/d)*(Jr+mp*r^2)*(-bp);
+
+B(3,1) = (1/d)*Jp*(kt/Rm);
+B(4,1) = (1/d)*(mp*I*r*(kt*(1/Rm)));
+
+Ad = eye(4,4)+ts*A
+Bd = B*ts
+Dd = 0;
+Cd = C;
+
+%% MPC
+clc;
+function [u_opt, feasible, cost] = MPC_controller(x_current, x_ref, Ad, Bd, Cd, N, Q, R, P, u_prev, u_max, du_max)
+    n = size(Ad, 1);  % number of states
+    m = size(Bd, 2);  % number of inputs
+    
+    u = sdpvar(m, N, 'full');    % control sequence,  a symbolic optimisation variable in YALMIP
+    x = sdpvar(n, N+1, 'full');  % state sequence
+    disp(u)
+    disp(x)
+    
+    constraints = [];
+    objective = 0;
+    
+    constraints = [constraints, x(:,1) == x_current];
+    
+    for k = 1:N
+        constraints = [constraints, x(:,k+1) == Ad*x(:,k) + Bd*u(:,k)];
+    end
+    
+    constraints = [constraints, -u_max <= u <= u_max]; % input mag limit
+    
+    for k = 1:N % input rate limit
+        if k == 1
+            du = u(:,k) - u_prev;
+        else
+            du = u(:,k) - u(:,k-1);
+        end
+        constraints = [constraints, -du_max <= du <= du_max];
+    end
+    
+    % objective function 
+    for k = 1:N
+        disp(x(:,k))
+        % stage cost
+        objective = objective + (x(:,k) - x_ref)' * Q * (x(:,k) - x_ref);
+        objective = objective + u(:,k)' * R * u(:,k);
+    end
+    
+    % terminal cost
+    objective = objective + (x(:,N+1) - x_ref)' * P * (x(:,N+1) - x_ref);
+
+    
+    diagnostics = optimize(constraints, objective);
+    
+    if diagnostics.problem == 0
+        u_opt = value(u(:,1));      
+        feasible = true;
+        cost = value(objective);
+    else
+        u_opt = 0;                  
+        feasible = false;
+        cost = inf;
+        warning('MPC infeasible');
+    end
+end
+
+
+
+N = 50; % prediction horizon 
+Q = [100   0     0     0;  
+       0    1     0     0;  
+       0    0   0.1   0;     
+       0    0     0   0.1];  
+    % state weightinig matrix
+R = 1;   % input weighting matrix                   
+P = 10 * Q;    % terminal cost               
+
+u_max = 5;      
+du_max = 2;     
+
+u_prev = 0; 
+x_current = [0; 0.1; 0; 0];  
+x_ref = [0; 0; 0; 0];        
+[u_opt, feasible, cost] = MPC_controller(x_current, x_ref, Ad, Bd, Cd, N, Q, R, P, u_prev, u_max, du_max);
+disp(u_opt);
+disp(feasible);
+disp(cost);

@@ -13,11 +13,11 @@ function [u_opt] = MPC_controller(input)
               0 0.3372 -0.0090 0.9989];
         Bd = [0; 0; 0.0412; 0.0407];
         
-        N = 10;  % Reduced horizon for speed
-        Q = diag([100, 1, 0.1, 0.1]);
-        R = 1;
-        u_max = 5;
-        du_max = 2;
+        N = 80;  % Reduced horizon for speed
+        Q = diag([2000, 1, 0.1, 0.1]);
+        R = 0.001;
+        u_max = 10;
+        du_max = 10;
         
         % Define optimization variables
         x0 = sdpvar(4,1);      % Initial state

@@ -1,15 +1,11 @@
 function [u_opt] = MPC_controller(input)
-    %#codegen  
-    
     arguments
-        input (5,1) double {mustBeReal} 
+        input (4,1) double {mustBeReal}  
     end
     
-    % Extract states and previous control
-    x_current = input(1:4);  
-    u_prev = input(5);      
+    x_current = input;  
     
-    % System matrices
+    % System matrices 
     Ad = [1.002 0 0 0; 
           0 1.002 0 0; 
           0 0.1103 0.9909 0.0004; 
@@ -17,47 +13,38 @@ function [u_opt] = MPC_controller(input)
     Bd = [0; 0; 0.0412; 0.0407];
     
     % MPC parameters
-    N = 50;
-    Q = [100 0 0 0;  
-         0 1 0 0;  
-         0 0 0.1 0;     
-         0 0 0 0.1];  
-    R = 1;
+    N = 10;  % Reduced for speed
+    Q = diag([100, 1, 0.1, 0.1]);  % 4x4 state weights
+    R = 1;   % input weight
     P = 10 * Q;
     u_max = 5;
     du_max = 2;
-    x_ref = [0; 0; 0; 0];
+    x_ref = zeros(4,1);
     
-    % Initialize output
-    u_opt = 0; 
-    
-    % Setup optimization variables
-    n = size(Ad, 1);
-    m = size(Bd, 2);
+    % Setup optimization
+    n = size(Ad, 1);  % 4 states
+    m = size(Bd, 2);  % 1 input
     
     u = sdpvar(m, N, 'full');
     x = sdpvar(n, N+1, 'full');
     
     % Constraints
-    constraints = [x(:,1) == x_current(:)];  
+    constraints = [x(:,1) == x_current];
     
     for k = 1:N
         constraints = [constraints, x(:,k+1) == Ad*x(:,k) + Bd*u(:,k)];
     end
     
+    % Input magnitude constraints
     constraints = [constraints, -u_max <= u <= u_max];
     
-    % Rate constraints
-    for k = 1:N
-        if k == 1
-            du = u(:,k) - u_prev;
-        else
-            du = u(:,k) - u(:,k-1);
-        end
+    % Input rate constraints (simplified)
+    for k = 2:N
+        du = u(:,k) - u(:,k-1);
         constraints = [constraints, -du_max <= du <= du_max];
     end
     
-    % Objective function
+    % Objective
     objective = 0;
     for k = 1:N
         objective = objective + (x(:,k) - x_ref)' * Q * (x(:,k) - x_ref);
@@ -68,14 +55,10 @@ function [u_opt] = MPC_controller(input)
     % Solve
     diagnostics = optimize(constraints, objective);
     
-    % Output result
     if diagnostics.problem == 0
-        u_opt = double(value(u(:,1)));
+        u_opt = value(u(:,1));
     else
-        u_opt = double(0);
+        u_opt = 0;
         warning('MPC infeasible');
     end
-    
-    % Ensure scalar output
-    u_opt = u_opt(1);  
 end

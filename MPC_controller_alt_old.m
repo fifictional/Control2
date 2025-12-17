@@ -1,6 +1,4 @@
-function [u_opt] = MPC_controller(input)
-%#codegen
-    persistent optimizerObj u_prev
+
     
     x_current = input;  % [theta; alpha; theta_dot; alpha_dot]
     
